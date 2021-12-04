@@ -1,0 +1,116 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mysql.fullname" . }}
+  labels:
+    {{- include "mysql.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "mysql.selectorLabels" . | nindent 6 }}
+  serviceName: {{ include "mysql.fullname" . }}
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata:
+      labels:
+        {{- include "mysql.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "mysql.serviceAccountName" . }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+      - name: init-mysql
+        image: {{ .Values.images.mysql }}
+        command: ["bash", "/mnt/config-map/init-mysql.sh"]
+        volumeMounts:
+        - name: conf
+          mountPath: /mnt/conf.d
+        - name: config-map
+          mountPath: /mnt/config-map
+      - name: clone-mysql
+        image: {{ .Values.images.xtrabackup }}
+        command: ["bash", "/mnt/config-map/clone-mysql.sh"]
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/mysql
+          subPath: mysql
+        - name: conf
+          mountPath: /etc/mysql/conf.d
+        - name: config-map
+          mountPath: /mnt/config-map
+      containers:
+      - name: mysql
+        image: {{ .Values.images.mysql }}
+        env:
+        - name: MYSQL_ALLOW_EMPTY_PASSWORD
+          value: "1"
+        {{- if .Values.init_db.create }}
+        envFrom:
+        - secretRef:
+           name: {{ include "mysql.fullname" . }}
+        {{- end }}
+        ports:
+        - name: mysql
+          containerPort: 3306
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/mysql
+          subPath: mysql
+        - name: conf
+          mountPath: /etc/mysql/conf.d
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+        livenessProbe:
+          exec:
+            command: ["mysqladmin", "ping"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            # Check we can execute queries over TCP (skip-networking is off).
+            command: ["mysql", "-h", "127.0.0.1", "-e", "SELECT 1"]
+          initialDelaySeconds: 5
+          periodSeconds: 2
+          timeoutSeconds: 1
+      - name: xtrabackup
+        image: {{ .Values.images.xtrabackup }}
+        ports:
+        - name: xtrabackup
+          containerPort: 3307
+        command: ["bash", "/mnt/config-map/xtrabackup.sh"]
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/mysql
+          subPath: mysql
+        - name: conf
+          mountPath: /etc/mysql/conf.d
+        - name: config-map
+          mountPath: /mnt/config-map
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+      volumes:
+      - name: conf
+        emptyDir: {}
+      - name: config-map
+        configMap:
+          name: {{ include "mysql.fullname" . }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      storageClassName: {{ include "mysql.fullname" . }}
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: {{ .Values.persistentvolume.storage }}
+      selector:
+        matchLabels:
+          app: mysql-data

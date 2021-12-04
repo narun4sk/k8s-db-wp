@@ -1,0 +1,30 @@
+---
+# Headless service for stable DNS entries of StatefulSet members.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mysql.fullname" . }}
+  labels:
+    {{- include "mysql.labels" . | nindent 4 }}
+spec:
+  ports:
+  - name: mysql
+    port: 3306
+  clusterIP: None
+  selector:
+    {{- include "mysql.selectorLabels" . | nindent 4 }}
+---
+# Client service for connecting to any MySQL instance for reads.
+# For writes, you must instead connect to the primary: mysql-0.mysql.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mysql.fullname" . }}-read
+  labels:
+    {{- include "mysql.labels" . | nindent 4 }}
+spec:
+  ports:
+  - name: mysql
+    port: 3306
+  selector:
+    {{- include "mysql.selectorLabels" . | nindent 4 }}

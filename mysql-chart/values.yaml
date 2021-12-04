@@ -1,0 +1,47 @@
+# Default values for mysql.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 2
+
+images:
+  mysql: mysql:5.7
+  xtrabackup: gcr.io/google-samples/xtrabackup:1.0
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+persistentvolume:
+  storage: 3Gi
+  node_path: /mysql-data/
+
+affinity:
+  nodeAffinity:
+    # To ensure the replicas are scheduled on the specific nodes
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: role
+          operator: In
+          values:
+          - db
+  podAntiAffinity:
+    # To ensure the replicas are not located on the same node
+    requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values:
+          - mysql
+      topologyKey: "kubernetes.io/hostname"
+
+
+init_db:
+  create: true
